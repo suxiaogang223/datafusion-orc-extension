@@ -11,18 +11,26 @@ A DataFusion extension providing ORC (Optimized Row Columnar) file format suppor
 
 ## Status
 
-🚧 **Work in Progress** - This project is currently in early development. Core functionality is being implemented.
+🚧 **Work in Progress** - Phase 2 (Core FileFormat Implementation) completed. Currently implementing FileSource and data reading functionality.
 
 ## Features
 
 ### Planned Features
 
-- ✅ **Basic Reading**: Read ORC files from ObjectStore
+**Implemented:**
 - ✅ **Schema Inference**: Automatically infer table schema from ORC files
-- ✅ **Statistics**: Extract file statistics for query optimization
-- ✅ **Column Projection**: Read only required columns for better performance
-- ⏳ **Predicate Pushdown**: Filter data at file level (planned)
-- ⏳ **Write Support**: Write query results to ORC format (planned)
+- ✅ **Statistics Extraction**: Extract file statistics (row count, file size) for query optimization
+- ✅ **Metadata Reading**: Read ORC file metadata from ObjectStore
+- ✅ **Multi-file Schema Merging**: Merge schemas from multiple ORC files
+
+**In Progress:**
+- 🚧 **Basic Reading**: Read ORC files and convert to RecordBatch streams
+- 🚧 **FileSource Implementation**: Complete OrcSource and OrcOpener
+
+**Planned:**
+- ⏳ **Column Projection**: Read only required columns for better performance
+- ⏳ **Predicate Pushdown**: Filter data at file level
+- ⏳ **Write Support**: Write query results to ORC format
 
 ## Implementation Plan
 
@@ -33,16 +41,20 @@ A DataFusion extension providing ORC (Optimized Row Columnar) file format suppor
 - [x] Configure Cargo.toml dependencies
 - [x] Create module structure
 
-### Phase 2: Core FileFormat Implementation
+### Phase 2: Core FileFormat Implementation ✅
 
-- [ ] Implement `OrcFormatFactory`
-  - Implement `FileFormatFactory` trait
-  - Support configuration options
-- [ ] Implement `OrcFormat`
-  - Implement `FileFormat` trait
-  - Schema inference (`infer_schema`)
-  - Statistics extraction (`infer_stats`)
-  - Physical plan creation (`create_physical_plan`)
+- [x] Implement `OrcFormatFactory`
+  - [x] Implement `FileFormatFactory` trait
+  - [x] Support configuration options
+- [x] Implement `OrcFormat`
+  - [x] Implement `FileFormat` trait
+  - [x] Schema inference (`infer_schema`)
+  - [x] Statistics extraction (`infer_stats`)
+  - [x] Physical plan creation (`create_physical_plan`)
+  - [x] File source creation (`file_source`)
+- [x] Create ObjectStore to ChunkReader adapter
+  - [x] `ObjectStoreChunkReader` implementation
+  - [x] Async metadata reading support
 
 ### Phase 3: FileSource Implementation
 
@@ -57,14 +69,14 @@ A DataFusion extension providing ORC (Optimized Row Columnar) file format suppor
 ### Phase 4: Reading Functionality
 
 - [ ] Basic reading
-  - ObjectStore integration
-  - ORC file parsing
-- [ ] Schema inference
-  - ORC schema → Arrow schema conversion
-  - Multi-file schema merging
-- [ ] Statistics extraction
-  - Stripe-level statistics
-  - Column-level statistics (min/max/null count)
+  - [ ] ObjectStore integration (partially done - metadata reading)
+  - [ ] ORC file parsing and RecordBatch generation
+- [x] Schema inference
+  - [x] ORC schema → Arrow schema conversion
+  - [x] Multi-file schema merging
+- [x] Statistics extraction
+  - [x] Basic statistics (row count, file size)
+  - [ ] Column-level statistics (min/max/null count) - TODO
 - [ ] Column projection support
   - Use orc-rust's `ProjectionMask`
 - [ ] Predicate pushdown (advanced feature)
@@ -176,7 +188,7 @@ let df = ctx.sql("SELECT * FROM my_table WHERE column > 100").await?;
 df.show().await?;
 ```
 
-> **Note**: This is example code for future implementation. The API may change during development.
+> **Note**: Schema inference and statistics extraction are implemented. File reading functionality is currently in development. The API may change during development.
 
 ## Architecture
 
@@ -212,8 +224,8 @@ Arrow RecordBatch Stream
 ### Requirements
 
 - Rust 1.73+ (matching orc-rust requirements)
-- Latest DataFusion version
-- orc-rust (located at `../orc-rust`)
+- DataFusion 51.0.0+
+- orc-rust 0.7.1+ (from crates.io)
 
 ### Building
 
@@ -247,8 +259,8 @@ Contributions are welcome! Please see [IMPLEMENTATION_PLAN.md](./IMPLEMENTATION_
 
 ## Roadmap
 
-- [ ] **v0.1.0**: Basic reading functionality
-- [ ] **v0.2.0**: Schema inference and statistics
+- [ ] **v0.1.0**: Basic reading functionality (in progress)
+- [x] **v0.2.0**: Schema inference and statistics ✅
 - [ ] **v0.3.0**: Column projection and basic optimizations
 - [ ] **v0.4.0**: Predicate pushdown support
 - [ ] **v0.5.0**: Writing functionality

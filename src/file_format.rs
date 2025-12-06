@@ -23,6 +23,16 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use datafusion_common::{GetExt, Result};
 use datafusion_datasource::file_format::{FileFormat, FileFormatFactory};
+use datafusion_datasource::file_scan_config::FileScanConfigBuilder;
+use datafusion_datasource::source::DataSourceExec;
+use datafusion_datasource::TableSchema;
+use datafusion_physical_plan::ExecutionPlan;
+use futures::StreamExt;
+use futures::TryStreamExt;
+use object_store::ObjectStore;
+
+use crate::metadata::{read_orc_schema, read_orc_statistics};
+use crate::source::OrcSource;
 
 /// Factory struct used to create [`OrcFormat`]
 #[derive(Debug, Default)]
@@ -97,32 +107,66 @@ impl FileFormat for OrcFormat {
 
     async fn infer_schema(
         &self,
-        _state: &dyn datafusion_session::Session,
-        _store: &Arc<dyn object_store::ObjectStore>,
-        _objects: &[object_store::ObjectMeta],
+        state: &dyn datafusion_session::Session,
+        store: &Arc<dyn ObjectStore>,
+        objects: &[object_store::ObjectMeta],
     ) -> Result<arrow::datatypes::SchemaRef> {
-        todo!("Schema inference not yet implemented")
+        use futures::stream::iter;
+
+        // Read schemas from all objects concurrently
+        let store_clone = Arc::clone(store);
+        let schemas: Vec<_> = iter(objects.iter())
+            .map(|object| {
+                let store = Arc::clone(&store_clone);
+                async move { read_orc_schema(&store, object).await }
+            })
+            .boxed() // Workaround for lifetime issues
+            .buffered(state.config_options().execution.meta_fetch_concurrency)
+            .try_collect()
+            .await?;
+
+        // Merge all schemas
+        // Schema::try_merge needs owned Schema, not Arc<Schema>
+        let schemas: Vec<_> = schemas.into_iter().map(|s| (*s).clone()).collect();
+        let merged_schema = arrow::datatypes::Schema::try_merge(schemas)?;
+        Ok(Arc::new(merged_schema))
     }
 
     async fn infer_stats(
         &self,
         _state: &dyn datafusion_session::Session,
-        _store: &Arc<dyn object_store::ObjectStore>,
-        _table_schema: arrow::datatypes::SchemaRef,
-        _object: &object_store::ObjectMeta,
+        store: &Arc<dyn ObjectStore>,
+        table_schema: arrow::datatypes::SchemaRef,
+        object: &object_store::ObjectMeta,
     ) -> Result<datafusion_common::Statistics> {
-        todo!("Statistics inference not yet implemented")
+        read_orc_statistics(store, object, table_schema).await
     }
 
     async fn create_physical_plan(
         &self,
         _state: &dyn datafusion_session::Session,
-        _conf: datafusion_datasource::file_scan_config::FileScanConfig,
-    ) -> Result<Arc<dyn datafusion_physical_plan::ExecutionPlan>> {
-        todo!("Physical plan creation not yet implemented")
+        conf: datafusion_datasource::file_scan_config::FileScanConfig,
+    ) -> Result<Arc<dyn ExecutionPlan>> {
+        // Create OrcSource from the file scan config
+        // conf.file_schema() returns SchemaRef, we need to convert it to TableSchema
+        let file_schema = conf.file_schema();
+        let table_schema = TableSchema::from_file_schema(file_schema.clone());
+        let source = Arc::new(OrcSource::new(table_schema));
+
+        // Create new FileScanConfig with OrcSource
+        let conf = FileScanConfigBuilder::from(conf)
+            .with_source(source)
+            .build();
+
+        // Create DataSourceExec
+        Ok(DataSourceExec::from_data_source(conf))
     }
 
     fn file_source(&self) -> Arc<dyn datafusion_datasource::file::FileSource> {
-        todo!("File source creation not yet implemented")
+        // Return a default OrcSource
+        // The actual schema will be set when create_physical_plan is called
+        Arc::new(OrcSource::new(TableSchema::from_file_schema(Arc::new(
+            arrow::datatypes::Schema::empty(),
+        ))))
     }
 }

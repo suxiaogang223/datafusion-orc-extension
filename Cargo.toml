@@ -52,6 +52,7 @@ orc-rust = { version = "0.7.1", default-features = false, features = ["async"] }
 # Async and runtime
 async-trait = "0.1.89"
 futures = "0.3"
+futures-util = "0.3"
 tokio = { version = "1.28", features = ["rt", "rt-multi-thread", "io-util", "fs", "macros"] }
 
 # Object store

@@ -32,3 +32,4 @@ pub mod writer;
 
 // Re-export main types
 pub use file_format::{OrcFormat, OrcFormatFactory};
+pub use source::OrcSource;
