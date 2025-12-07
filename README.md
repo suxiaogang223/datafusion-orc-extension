@@ -58,10 +58,10 @@ A DataFusion extension providing ORC (Optimized Row Columnar) file format suppor
 
 ### Phase 3: FileSource Implementation
 
-- [ ] Implement `OrcSource`
+- [x] Implement `OrcSource`
   - Implement `FileSource` trait
   - Statistics support
-- [ ] Implement `OrcOpener`
+- [x] Implement `OrcOpener`
   - Implement `FileOpener` trait
   - Async file reading
   - RecordBatch stream generation

@@ -27,6 +27,8 @@ use datafusion_datasource::TableSchema;
 use datafusion_physical_plan::metrics::ExecutionPlanMetricsSet;
 use object_store::ObjectStore;
 
+use crate::opener::OrcOpener;
+
 /// Execution plan for reading one or more ORC files
 #[derive(Debug)]
 pub struct OrcSource {
@@ -49,11 +51,40 @@ impl OrcSource {
 impl FileSource for OrcSource {
     fn create_file_opener(
         &self,
-        _object_store: Arc<dyn ObjectStore>,
-        _base_config: &FileScanConfig,
-        _partition: usize,
+        object_store: Arc<dyn ObjectStore>,
+        base_config: &FileScanConfig,
+        partition: usize,
     ) -> Arc<dyn FileOpener> {
-        todo!("File opener creation not yet implemented")
+        // Extract projection indices from the file scan config
+        // For now, we'll project all columns (no projection pushdown yet)
+        let file_schema = base_config.file_schema();
+        let projection: Arc<[usize]> = (0..file_schema.fields().len()).collect::<Vec<_>>().into();
+
+        // Get batch size from config or use default
+        let batch_size = base_config.batch_size.unwrap_or(8192); // Default batch size
+
+        // Get limit from config
+        let limit = base_config.limit;
+
+        // Get file schema (without partition columns)
+        let logical_file_schema = base_config.file_schema().clone();
+
+        // Get partition fields
+        let partition_fields = base_config.table_partition_cols().clone();
+
+        // Get metrics
+        let metrics = self.metrics.clone();
+
+        Arc::new(OrcOpener::new(
+            partition,
+            projection,
+            batch_size,
+            limit,
+            logical_file_schema,
+            partition_fields,
+            metrics,
+            object_store,
+        ))
     }
 
     fn as_any(&self) -> &dyn Any {
