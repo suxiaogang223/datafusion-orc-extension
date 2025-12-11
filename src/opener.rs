@@ -19,6 +19,7 @@
 
 use arrow::array::RecordBatch;
 use arrow::datatypes::SchemaRef;
+use arrow::record_batch::RecordBatchOptions;
 use datafusion_common::{DataFusionError, Result};
 use datafusion_datasource::file_stream::{FileOpenFuture, FileOpener};
 use datafusion_datasource::PartitionedFile;
@@ -55,6 +56,7 @@ pub struct OrcOpener {
 
 impl OrcOpener {
     /// Create a new OrcOpener
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         partition_index: usize,
         projection: Arc<[usize]>,
@@ -86,6 +88,7 @@ impl FileOpener for OrcOpener {
         let batch_size = self.batch_size;
         let limit = self.limit;
         let projection = Arc::clone(&self.projection);
+        let logical_file_schema = Arc::clone(&self.logical_file_schema);
 
         let future: BoxFuture<'static, Result<BoxStream<'static, Result<RecordBatch>>>> =
             Box::pin(async move {
@@ -105,20 +108,24 @@ impl FileOpener for OrcOpener {
                     })?;
 
                 // Apply projection if not all columns are needed
-                let file_metadata = arrow_reader_builder.file_metadata();
-                let root_data_type = file_metadata.root_data_type();
+                let (projection_mask, file_column_count) = {
+                    let file_metadata = arrow_reader_builder.file_metadata();
+                    let root_data_type = file_metadata.root_data_type();
 
-                // Check if we need to apply projection
-                // If projection includes all columns, use ProjectionMask::all()
-                // Otherwise, create a projection mask
-                let projection_mask = if projection.len() == root_data_type.children().len()
-                    && projection.iter().enumerate().all(|(i, &idx)| i == idx)
-                {
-                    // All columns in order - no projection needed
-                    ProjectionMask::all()
-                } else {
-                    // Create projection mask from indices
-                    ProjectionMask::roots(root_data_type, projection.iter().copied())
+                    let file_len = root_data_type.children().len();
+
+                    let mask = if projection.is_empty() {
+                        ProjectionMask::roots(root_data_type, std::iter::empty())
+                    } else if projection.len() == file_len
+                        && projection.iter().enumerate().all(|(i, &idx)| i == idx)
+                    {
+                        ProjectionMask::all()
+                    } else {
+                        // TODO: implement projection pushdown once schema reconciliation is available
+                        ProjectionMask::all()
+                    };
+
+                    (mask, file_len)
                 };
 
                 // Apply projection and batch size
@@ -130,11 +137,32 @@ impl FileOpener for OrcOpener {
                 let arrow_stream_reader = arrow_reader_builder.build_async();
 
                 // Convert ArrowError to DataFusionError
-                let base_stream = arrow_stream_reader.map(|result| {
+                let projected_stream = arrow_stream_reader.map(|result| {
                     result.map_err(|e| {
                         DataFusionError::External(format!("Failed to read ORC batch: {}", e).into())
                     })
                 });
+
+                let needs_projection = {
+                    let projection_len = projection.len();
+                    projection.is_empty()
+                        || projection_len != file_column_count
+                        || !projection.iter().enumerate().all(|(i, &idx)| i == idx)
+                };
+
+                let base_stream: BoxStream<'static, Result<RecordBatch>> = if needs_projection {
+                    let logical_file_schema = Arc::clone(&logical_file_schema);
+                    let projection = Arc::clone(&projection);
+                    projected_stream
+                        .map(move |result| {
+                            result.and_then(|batch| {
+                                project_batch(batch, &logical_file_schema, projection.as_ref())
+                            })
+                        })
+                        .boxed()
+                } else {
+                    projected_stream.boxed()
+                };
 
                 // Apply limit if specified
                 let stream: BoxStream<'static, Result<RecordBatch>> = if let Some(limit_val) = limit
@@ -198,4 +226,29 @@ impl FileOpener for OrcOpener {
 
         Ok(future)
     }
+}
+
+fn project_batch(
+    batch: RecordBatch,
+    logical_schema: &SchemaRef,
+    projection: &[usize],
+) -> Result<RecordBatch> {
+    if projection.is_empty() {
+        let mut options = RecordBatchOptions::new();
+        options.row_count = Some(batch.num_rows());
+        return RecordBatch::try_new_with_options(Arc::clone(logical_schema), vec![], &options)
+            .map_err(|e| {
+                DataFusionError::External(
+                    format!("Failed to build empty projection batch: {e}").into(),
+                )
+            });
+    }
+
+    let columns = projection
+        .iter()
+        .map(|&idx| batch.column(idx).clone())
+        .collect::<Vec<_>>();
+
+    RecordBatch::try_new(Arc::clone(logical_schema), columns)
+        .map_err(|e| DataFusionError::External(format!("Failed to project ORC batch: {e}").into()))
 }

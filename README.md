@@ -11,7 +11,7 @@ A DataFusion extension providing ORC (Optimized Row Columnar) file format suppor
 
 ## Status
 
-🚧 **Work in Progress** - Phase 2 (Core FileFormat Implementation) completed. Currently implementing FileSource and data reading functionality.
+🚧 **Work in Progress** - Phase 3 (FileSource Implementation) completed. Currently working on Phase 4a: Basic Reading Functionality (integration tests landed; unit tests & docs in progress).
 
 ## Features
 
@@ -24,12 +24,12 @@ A DataFusion extension providing ORC (Optimized Row Columnar) file format suppor
 - ✅ **Multi-file Schema Merging**: Merge schemas from multiple ORC files
 
 **In Progress:**
-- 🚧 **Basic Reading**: Read ORC files and convert to RecordBatch streams
-- 🚧 **FileSource Implementation**: Complete OrcSource and OrcOpener
+- 🚧 **Basic Reading Testing**: Integration tests in place for schema inference, streaming, projection+LIMIT; unit/error-path coverage pending
+- 🚧 **Error Handling**: Comprehensive error handling and edge cases
 
 **Planned:**
-- ⏳ **Column Projection**: Read only required columns for better performance
-- ⏳ **Predicate Pushdown**: Filter data at file level
+- ⏳ **Column Projection Optimization**: Enhanced projection support for nested columns
+- ⏳ **Predicate Pushdown**: Filter data at stripe and row level
 - ⏳ **Write Support**: Write query results to ORC format
 
 ## Implementation Plan
@@ -56,32 +56,56 @@ A DataFusion extension providing ORC (Optimized Row Columnar) file format suppor
   - [x] `ObjectStoreChunkReader` implementation
   - [x] Async metadata reading support
 
-### Phase 3: FileSource Implementation
+### Phase 3: FileSource Implementation ✅
 
 - [x] Implement `OrcSource`
-  - Implement `FileSource` trait
-  - Statistics support
+  - [x] Implement `FileSource` trait
+  - [x] Basic statistics support
 - [x] Implement `OrcOpener`
-  - Implement `FileOpener` trait
-  - Async file reading
-  - RecordBatch stream generation
+  - [x] Implement `FileOpener` trait
+  - [x] Async file reading
+  - [x] RecordBatch stream generation
+  - [x] Limit support (SQL LIMIT clause)
+  - [ ] File-level column projection pushdown (current implementation reads all columns and relies on DataFusion for projection)
 
-### Phase 4: Reading Functionality
+### Phase 4a: Basic Reading Functionality (In Progress)
 
-- [ ] Basic reading
-  - [ ] ObjectStore integration (partially done - metadata reading)
-  - [ ] ORC file parsing and RecordBatch generation
+- [x] Core reading infrastructure
+  - [x] ObjectStore integration
+  - [x] ORC file parsing and RecordBatch generation
+  - [x] Async stream reading
 - [x] Schema inference
   - [x] ORC schema → Arrow schema conversion
   - [x] Multi-file schema merging
-- [x] Statistics extraction
-  - [x] Basic statistics (row count, file size)
-  - [ ] Column-level statistics (min/max/null count) - TODO
-- [ ] Column projection support
-  - Use orc-rust's `ProjectionMask`
-- [ ] Predicate pushdown (advanced feature)
-  - Stripe-level filtering
-  - Row-level filtering
+- [x] Basic statistics extraction
+  - [x] File-level statistics (row count, file size)
+- [x] Testing and validation
+  - [x] Integration tests with sample ORC files (schema inference + record batch validation, projection + LIMIT checks, map/list coverage)
+  - [x] Schema inference tests (basic types and complex types)
+  - [ ] Unit tests for basic reading
+  - [ ] Error handling tests
+- [ ] Documentation
+  - [ ] Basic usage examples
+  - [ ] API documentation
+
+### Phase 4b: Column Projection Optimization (Planned)
+
+- [ ] Enhanced projection support
+  - [ ] Optimize ProjectionMask usage
+  - [ ] Support for nested column projection
+  - [ ] Performance testing and optimization
+
+### Phase 4c: Predicate Pushdown (Planned - Advanced)
+
+- [ ] Stripe-level filtering
+  - [ ] Use ORC stripe statistics for filtering
+  - [ ] Skip entire stripes when possible
+- [ ] Row-level filtering
+  - [ ] Use ORC row index for row-level filtering
+  - [ ] Integration with DataFusion predicates
+- [ ] Column-level statistics (min/max/null count)
+  - [ ] Extract column statistics from ORC metadata
+  - [ ] Use for query optimization
 
 ### Phase 5: Writing Functionality (Optional)
 
@@ -188,7 +212,7 @@ let df = ctx.sql("SELECT * FROM my_table WHERE column > 100").await?;
 df.show().await?;
 ```
 
-> **Note**: Schema inference and statistics extraction are implemented. File reading functionality is currently in development. The API may change during development.
+> **Note**: Core reading functionality is implemented. Currently in Phase 4a: testing and validation. The API may change during development.
 
 ## Architecture
 
@@ -259,11 +283,12 @@ Contributions are welcome! Please see [IMPLEMENTATION_PLAN.md](./IMPLEMENTATION_
 
 ## Roadmap
 
-- [ ] **v0.1.0**: Basic reading functionality (in progress)
+- [x] **v0.1.0**: Core infrastructure (FileFormat, FileSource, FileOpener) ✅
 - [x] **v0.2.0**: Schema inference and statistics ✅
-- [ ] **v0.3.0**: Column projection and basic optimizations
-- [ ] **v0.4.0**: Predicate pushdown support
-- [ ] **v0.5.0**: Writing functionality
+- [ ] **v0.3.0**: Basic reading functionality (Phase 4a) - Testing and validation
+- [ ] **v0.4.0**: Column projection optimization (Phase 4b)
+- [ ] **v0.5.0**: Predicate pushdown support (Phase 4c)
+- [ ] **v0.6.0**: Writing functionality (Phase 5)
 - [ ] **v1.0.0**: Production-ready version
 
 ## Related Projects
