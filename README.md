@@ -11,7 +11,7 @@ A DataFusion extension providing ORC (Optimized Row Columnar) file format suppor
 
 ## Status
 
-🚧 **Work in Progress** - Phase 3 (FileSource Implementation) completed. Currently working on Phase 4a: Basic Reading Functionality (testing and validation).
+🚧 **Work in Progress** - Phase 3 (FileSource Implementation) completed. Currently working on Phase 4a: Basic Reading Functionality (integration tests landed; unit tests & docs in progress).
 
 ## Features
 
@@ -24,7 +24,7 @@ A DataFusion extension providing ORC (Optimized Row Columnar) file format suppor
 - ✅ **Multi-file Schema Merging**: Merge schemas from multiple ORC files
 
 **In Progress:**
-- 🚧 **Basic Reading Testing**: Testing and validation of core reading functionality
+- 🚧 **Basic Reading Testing**: Integration tests in place for schema inference, streaming, projection+LIMIT; unit/error-path coverage pending
 - 🚧 **Error Handling**: Comprehensive error handling and edge cases
 
 **Planned:**
@@ -66,7 +66,7 @@ A DataFusion extension providing ORC (Optimized Row Columnar) file format suppor
   - [x] Async file reading
   - [x] RecordBatch stream generation
   - [x] Limit support (SQL LIMIT clause)
-  - [x] Basic projection support (using ProjectionMask)
+  - [ ] File-level column projection pushdown (current implementation reads all columns and relies on DataFusion for projection)
 
 ### Phase 4a: Basic Reading Functionality (In Progress)
 
@@ -80,7 +80,7 @@ A DataFusion extension providing ORC (Optimized Row Columnar) file format suppor
 - [x] Basic statistics extraction
   - [x] File-level statistics (row count, file size)
 - [x] Testing and validation
-  - [x] Integration tests with sample ORC files
+  - [x] Integration tests with sample ORC files (schema inference + record batch validation, projection + LIMIT checks, map/list coverage)
   - [x] Schema inference tests (basic types and complex types)
   - [ ] Unit tests for basic reading
   - [ ] Error handling tests

@@ -56,9 +56,11 @@ impl FileSource for OrcSource {
         partition: usize,
     ) -> Arc<dyn FileOpener> {
         // Extract projection indices from the file scan config
-        // For now, we'll project all columns (no projection pushdown yet)
         let file_schema = base_config.file_schema();
-        let projection: Arc<[usize]> = (0..file_schema.fields().len()).collect::<Vec<_>>().into();
+        let projection: Arc<[usize]> = base_config
+            .file_column_projection_indices()
+            .map(|indices| indices.into())
+            .unwrap_or_else(|| (0..file_schema.fields().len()).collect::<Vec<_>>().into());
 
         // Get batch size from config or use default
         let batch_size = base_config.batch_size.unwrap_or(8192); // Default batch size
@@ -66,8 +68,8 @@ impl FileSource for OrcSource {
         // Get limit from config
         let limit = base_config.limit;
 
-        // Get file schema (without partition columns)
-        let logical_file_schema = base_config.file_schema().clone();
+        // Get projected file schema (without partition columns)
+        let logical_file_schema = base_config.projected_file_schema();
 
         // Get partition fields
         let partition_fields = base_config.table_partition_cols().clone();
@@ -123,7 +125,9 @@ impl FileSource for OrcSource {
     }
 
     fn statistics(&self) -> datafusion_common::Result<datafusion_common::Statistics> {
-        todo!("Statistics not yet implemented")
+        Ok(datafusion_common::Statistics::new_unknown(
+            self.table_schema.table_schema().as_ref(),
+        ))
     }
 
     fn metrics(&self) -> &ExecutionPlanMetricsSet {
