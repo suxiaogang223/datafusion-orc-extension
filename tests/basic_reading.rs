@@ -338,6 +338,43 @@ async fn test_basic_reading_alltypes_projection_subset() {
 }
 
 #[tokio::test]
+async fn test_basic_reading_alltypes_projection_reordered() {
+    let ctx = SessionContext::new();
+    register_orc_table(&ctx, "reordered_alltypes", "alltypes.snappy.orc")
+        .await
+        .expect("Failed to register table");
+
+    let df = ctx
+        .table("reordered_alltypes")
+        .await
+        .expect("Table exists")
+        .select_columns(&["int16", "boolean"])
+        .expect("Projection should succeed");
+
+    let batches = df.collect().await.expect("Failed to collect batches");
+
+    let expected = [
+        "+--------+---------+",
+        "| int16  | boolean |",
+        "+--------+---------+",
+        "|        |         |",
+        "| 0      | true    |",
+        "| 1      | false   |",
+        "| -1     | false   |",
+        "| 32767  | true    |",
+        "| -32768 | true    |",
+        "| 50     | true    |",
+        "| 51     | true    |",
+        "| 52     | true    |",
+        "| 53     | false   |",
+        "|        |         |",
+        "+--------+---------+",
+    ];
+
+    assert_batches_eq!(expected, &batches);
+}
+
+#[tokio::test]
 async fn test_basic_reading_map_list_types() {
     let ctx = SessionContext::new();
     register_orc_table(&ctx, "map_list", "map_list.snappy.orc")

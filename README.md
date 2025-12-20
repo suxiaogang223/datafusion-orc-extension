@@ -88,11 +88,11 @@ A DataFusion extension providing ORC (Optimized Row Columnar) file format suppor
   - [ ] Basic usage examples
   - [ ] API documentation
 
-### Phase 4b: Column Projection Optimization (Planned)
+### Phase 4b: Column Projection Optimization (In Progress)
 
-- [ ] Enhanced projection support
-  - [ ] Optimize ProjectionMask usage
-  - [ ] Support for nested column projection
+- [x] Enhanced projection support
+  - [x] Optimize ProjectionMask usage
+  - [x] Support for nested column projection ordering
   - [ ] Performance testing and optimization
 
 ### Phase 4c: Predicate Pushdown (Planned - Advanced)

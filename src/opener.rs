@@ -30,6 +30,8 @@ use futures::StreamExt;
 use object_store::ObjectStore;
 use orc_rust::arrow_reader::ArrowReaderBuilder;
 use orc_rust::projection::ProjectionMask;
+use orc_rust::schema::RootDataType;
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use crate::reader::ObjectStoreChunkReader;
@@ -108,24 +110,14 @@ impl FileOpener for OrcOpener {
                     })?;
 
                 // Apply projection if not all columns are needed
-                let (projection_mask, file_column_count) = {
+                let (projection_mask, projection_map, file_column_count) = {
                     let file_metadata = arrow_reader_builder.file_metadata();
                     let root_data_type = file_metadata.root_data_type();
-
                     let file_len = root_data_type.children().len();
 
-                    let mask = if projection.is_empty() {
-                        ProjectionMask::roots(root_data_type, std::iter::empty())
-                    } else if projection.len() == file_len
-                        && projection.iter().enumerate().all(|(i, &idx)| i == idx)
-                    {
-                        ProjectionMask::all()
-                    } else {
-                        // TODO: implement projection pushdown once schema reconciliation is available
-                        ProjectionMask::all()
-                    };
+                    let (mask, map) = build_projection_mask(root_data_type, projection.as_ref())?;
 
-                    (mask, file_len)
+                    (mask, Arc::new(map), file_len)
                 };
 
                 // Apply projection and batch size
@@ -143,20 +135,25 @@ impl FileOpener for OrcOpener {
                     })
                 });
 
-                let needs_projection = {
-                    let projection_len = projection.len();
-                    projection.is_empty()
-                        || projection_len != file_column_count
-                        || !projection.iter().enumerate().all(|(i, &idx)| i == idx)
-                };
+                let needs_projection = should_apply_batch_projection(
+                    projection.as_ref(),
+                    file_column_count,
+                    &logical_file_schema,
+                );
 
                 let base_stream: BoxStream<'static, Result<RecordBatch>> = if needs_projection {
                     let logical_file_schema = Arc::clone(&logical_file_schema);
                     let projection = Arc::clone(&projection);
+                    let projection_map = Arc::clone(&projection_map);
                     projected_stream
                         .map(move |result| {
                             result.and_then(|batch| {
-                                project_batch(batch, &logical_file_schema, projection.as_ref())
+                                project_batch(
+                                    batch,
+                                    &logical_file_schema,
+                                    projection.as_ref(),
+                                    &projection_map,
+                                )
                             })
                         })
                         .boxed()
@@ -232,6 +229,7 @@ fn project_batch(
     batch: RecordBatch,
     logical_schema: &SchemaRef,
     projection: &[usize],
+    projection_map: &HashMap<usize, usize>,
 ) -> Result<RecordBatch> {
     if projection.is_empty() {
         let mut options = RecordBatchOptions::new();
@@ -246,9 +244,94 @@ fn project_batch(
 
     let columns = projection
         .iter()
-        .map(|&idx| batch.column(idx).clone())
-        .collect::<Vec<_>>();
+        .map(|&file_index| {
+            let batch_index = projection_map.get(&file_index).ok_or_else(|| {
+                DataFusionError::Execution(format!(
+                    "Projection index {file_index} not found in ORC projection map"
+                ))
+            })?;
+            Ok(batch.column(*batch_index).clone())
+        })
+        .collect::<Result<Vec<_>>>()?;
 
     RecordBatch::try_new(Arc::clone(logical_schema), columns)
         .map_err(|e| DataFusionError::External(format!("Failed to project ORC batch: {e}").into()))
+}
+
+fn build_projection_mask(
+    root_data_type: &RootDataType,
+    projection: &[usize],
+) -> Result<(ProjectionMask, HashMap<usize, usize>)> {
+    let file_len = root_data_type.children().len();
+
+    if projection.is_empty() {
+        return Ok((
+            ProjectionMask::roots(root_data_type, std::iter::empty()),
+            HashMap::new(),
+        ));
+    }
+
+    let is_identity = projection.len() == file_len
+        && projection
+            .iter()
+            .enumerate()
+            .all(|(expected, &idx)| expected == idx);
+
+    if is_identity {
+        let mapping = (0..file_len).map(|idx| (idx, idx)).collect();
+        return Ok((ProjectionMask::all(), mapping));
+    }
+
+    let mut ordinals = projection.to_vec();
+    ordinals.sort_unstable();
+    ordinals.dedup();
+
+    let mask_indices = ordinals
+        .iter()
+        .map(|&ordinal| {
+            root_data_type
+                .children()
+                .get(ordinal)
+                .ok_or_else(|| {
+                    DataFusionError::Execution(format!(
+                        "Projection index {ordinal} is out of bounds for ORC file with {file_len} columns"
+                    ))
+                })
+                .map(|col| col.data_type().column_index())
+        })
+        .collect::<Result<Vec<_>>>()?;
+
+    let mapping = ordinals
+        .iter()
+        .enumerate()
+        .map(|(position, &ordinal)| (ordinal, position))
+        .collect();
+
+    Ok((ProjectionMask::roots(root_data_type, mask_indices), mapping))
+}
+
+fn should_apply_batch_projection(
+    projection: &[usize],
+    file_column_count: usize,
+    logical_schema: &SchemaRef,
+) -> bool {
+    if projection.is_empty() {
+        return true;
+    }
+
+    let is_full_identity = projection.len() == file_column_count
+        && projection
+            .iter()
+            .enumerate()
+            .all(|(expected, &idx)| expected == idx);
+
+    if is_full_identity {
+        return false;
+    }
+
+    let is_in_file_order = projection.windows(2).all(|pair| pair[0] < pair[1]);
+
+    let schema_matches_projection = logical_schema.fields().len() == projection.len();
+
+    !(is_in_file_order && schema_matches_projection)
 }
