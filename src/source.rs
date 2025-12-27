@@ -18,24 +18,40 @@
 //! OrcSource implementation for reading ORC files
 
 use std::any::Any;
+use std::fmt::{Debug, Formatter};
 use std::sync::Arc;
 
 use datafusion_datasource::file::FileSource;
 use datafusion_datasource::file_scan_config::FileScanConfig;
 use datafusion_datasource::file_stream::FileOpener;
 use datafusion_datasource::TableSchema;
+use datafusion_physical_expr_common::physical_expr::PhysicalExpr;
 use datafusion_physical_plan::metrics::ExecutionPlanMetricsSet;
 use object_store::ObjectStore;
+use orc_rust::predicate::Predicate as OrcPredicate;
 
 use crate::opener::OrcOpener;
+use crate::predicate::convert_physical_expr_to_predicate;
 
 /// Execution plan for reading one or more ORC files
-#[derive(Debug)]
 pub struct OrcSource {
     /// Table schema
     table_schema: TableSchema,
     /// Execution plan metrics
     metrics: ExecutionPlanMetricsSet,
+    /// Optional predicate filter pushed down from DataFusion
+    predicate: Option<Arc<dyn PhysicalExpr>>,
+    /// Converted orc-rust predicate (cached for efficiency)
+    orc_predicate: Option<OrcPredicate>,
+}
+
+impl Debug for OrcSource {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("OrcSource")
+            .field("table_schema", &self.table_schema)
+            .field("predicate", &self.predicate)
+            .finish()
+    }
 }
 
 impl OrcSource {
@@ -44,7 +60,27 @@ impl OrcSource {
         Self {
             table_schema: table_schema.into(),
             metrics: ExecutionPlanMetricsSet::new(),
+            predicate: None,
+            orc_predicate: None,
         }
+    }
+
+    /// Create a new OrcSource with a predicate filter
+    ///
+    /// The predicate will be converted to an orc-rust Predicate and used
+    /// for stripe-level filtering during file reads.
+    pub fn with_predicate(mut self, predicate: Arc<dyn PhysicalExpr>) -> Self {
+        // Try to convert DataFusion predicate to orc-rust predicate
+        let file_schema = self.table_schema.file_schema();
+        let orc_pred = convert_physical_expr_to_predicate(&predicate, file_schema);
+        self.orc_predicate = orc_pred;
+        self.predicate = Some(predicate);
+        self
+    }
+
+    /// Get the orc-rust predicate (if conversion was successful)
+    pub fn orc_predicate(&self) -> Option<&OrcPredicate> {
+        self.orc_predicate.as_ref()
     }
 }
 
@@ -77,6 +113,9 @@ impl FileSource for OrcSource {
         // Get metrics
         let metrics = self.metrics.clone();
 
+        // Clone the orc predicate for the opener
+        let orc_predicate = self.orc_predicate.clone();
+
         Arc::new(OrcOpener::new(
             partition,
             projection,
@@ -86,6 +125,7 @@ impl FileSource for OrcSource {
             partition_fields,
             metrics,
             object_store,
+            orc_predicate,
         ))
     }
 
@@ -94,10 +134,11 @@ impl FileSource for OrcSource {
     }
 
     fn with_batch_size(&self, _batch_size: usize) -> Arc<dyn FileSource> {
-        // TODO: Implement batch size configuration
         Arc::new(Self {
             table_schema: self.table_schema.clone(),
             metrics: self.metrics.clone(),
+            predicate: self.predicate.clone(),
+            orc_predicate: self.orc_predicate.clone(),
         })
     }
 
@@ -105,22 +146,26 @@ impl FileSource for OrcSource {
         Arc::new(Self {
             table_schema: schema,
             metrics: self.metrics.clone(),
+            predicate: self.predicate.clone(),
+            orc_predicate: self.orc_predicate.clone(),
         })
     }
 
     fn with_projection(&self, _config: &FileScanConfig) -> Arc<dyn FileSource> {
-        // TODO: Implement projection support
         Arc::new(Self {
             table_schema: self.table_schema.clone(),
             metrics: self.metrics.clone(),
+            predicate: self.predicate.clone(),
+            orc_predicate: self.orc_predicate.clone(),
         })
     }
 
     fn with_statistics(&self, _statistics: datafusion_common::Statistics) -> Arc<dyn FileSource> {
-        // TODO: Implement statistics support
         Arc::new(Self {
             table_schema: self.table_schema.clone(),
             metrics: self.metrics.clone(),
+            predicate: self.predicate.clone(),
+            orc_predicate: self.orc_predicate.clone(),
         })
     }
 
@@ -136,5 +181,10 @@ impl FileSource for OrcSource {
 
     fn file_type(&self) -> &str {
         "orc"
+    }
+
+    /// Returns the filter expression that will be applied during the file scan.
+    fn filter(&self) -> Option<Arc<dyn PhysicalExpr>> {
+        self.predicate.clone()
     }
 }

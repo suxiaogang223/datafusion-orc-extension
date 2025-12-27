@@ -11,7 +11,7 @@ A DataFusion extension providing ORC (Optimized Row Columnar) file format suppor
 
 ## Status
 
-🚧 **Work in Progress** - Phase 3 (FileSource Implementation) completed. Currently working on Phase 4a: Basic Reading Functionality (integration tests landed; unit tests & docs in progress).
+🚧 **Work in Progress** - Phase 4c (Predicate Pushdown) completed. Currently working on Phase 4a: Basic Reading Functionality (unit tests & docs in progress).
 
 ## Features
 
@@ -22,6 +22,7 @@ A DataFusion extension providing ORC (Optimized Row Columnar) file format suppor
 - ✅ **Statistics Extraction**: Extract file statistics (row count, file size) for query optimization
 - ✅ **Metadata Reading**: Read ORC file metadata from ObjectStore
 - ✅ **Multi-file Schema Merging**: Merge schemas from multiple ORC files
+- ✅ **Predicate Pushdown**: Filter data at stripe and row level using ORC row indexes
 
 **In Progress:**
 - 🚧 **Basic Reading Testing**: Integration tests in place for schema inference, streaming, projection+LIMIT; unit/error-path coverage pending
@@ -29,7 +30,6 @@ A DataFusion extension providing ORC (Optimized Row Columnar) file format suppor
 
 **Planned:**
 - ⏳ **Column Projection Optimization**: Enhanced projection support for nested columns
-- ⏳ **Predicate Pushdown**: Filter data at stripe and row level
 - ⏳ **Write Support**: Write query results to ORC format
 
 ## Implementation Plan
@@ -66,7 +66,7 @@ A DataFusion extension providing ORC (Optimized Row Columnar) file format suppor
   - [x] Async file reading
   - [x] RecordBatch stream generation
   - [x] Limit support (SQL LIMIT clause)
-  - [ ] File-level column projection pushdown (current implementation reads all columns and relies on DataFusion for projection)
+  - [x] File-level column projection pushdown (uses ProjectionMask to push down column selection to ORC reader)
 
 ### Phase 4a: Basic Reading Functionality (In Progress)
 
@@ -95,17 +95,21 @@ A DataFusion extension providing ORC (Optimized Row Columnar) file format suppor
   - [x] Support for nested column projection ordering
   - [ ] Performance testing and optimization
 
-### Phase 4c: Predicate Pushdown (Planned - Advanced)
+### Phase 4c: Predicate Pushdown ✅
 
-- [ ] Stripe-level filtering
-  - [ ] Use ORC stripe statistics for filtering
-  - [ ] Skip entire stripes when possible
-- [ ] Row-level filtering
-  - [ ] Use ORC row index for row-level filtering
-  - [ ] Integration with DataFusion predicates
-- [ ] Column-level statistics (min/max/null count)
-  - [ ] Extract column statistics from ORC metadata
-  - [ ] Use for query optimization
+- [x] Predicate conversion module
+  - [x] Convert DataFusion PhysicalExpr to orc-rust Predicate
+  - [x] Support comparison operators (=, !=, <, <=, >, >=)
+  - [x] Support logical operators (AND, OR, NOT)
+  - [x] Support IS NULL / IS NOT NULL predicates
+- [x] Stripe-level filtering
+  - [x] Use ORC row index statistics for filtering
+  - [x] Skip filtered row groups via orc-rust with_predicate()
+- [x] Integration with DataFusion
+  - [x] OrcSource filter() method returns stored predicate
+  - [x] OrcOpener applies predicate to ArrowReaderBuilder
+- [x] Integration tests
+  - [x] Tests for equality, comparison, compound, and null predicates
 
 ### Phase 5: Writing Functionality (Optional)
 
@@ -145,10 +149,11 @@ datafusion-orc-extension/
 │   ├── reader.rs           # ORC file reading logic
 │   ├── writer.rs           # ORC file writing logic (optional)
 │   ├── metadata.rs         # ORC metadata processing
-│   └── opener.rs           # File opening and configuration logic
+│   ├── opener.rs           # File opening and configuration logic
+│   └── predicate.rs        # Predicate conversion (DataFusion → orc-rust)
 └── tests/                  # Test files
-    ├── integration/        # Integration tests
-    └── unit/               # Unit tests
+    ├── basic_reading.rs    # Basic reading integration tests
+    └── predicate_pushdown.rs # Predicate pushdown integration tests
 ```
 
 ## Dependencies
@@ -285,9 +290,9 @@ Contributions are welcome! Please see [IMPLEMENTATION_PLAN.md](./IMPLEMENTATION_
 
 - [x] **v0.1.0**: Core infrastructure (FileFormat, FileSource, FileOpener) ✅
 - [x] **v0.2.0**: Schema inference and statistics ✅
-- [ ] **v0.3.0**: Basic reading functionality (Phase 4a) - Testing and validation
-- [ ] **v0.4.0**: Column projection optimization (Phase 4b)
-- [ ] **v0.5.0**: Predicate pushdown support (Phase 4c)
+- [ ] **v0.3.0**: Basic reading functionality (Phase 4a) - Testing and validation ✅
+- [ ] **v0.4.0**: Column projection optimization (Phase 4b) ✅
+- [x] **v0.5.0**: Predicate pushdown support (Phase 4c) ✅
 - [ ] **v0.6.0**: Writing functionality (Phase 5)
 - [ ] **v1.0.0**: Production-ready version
 

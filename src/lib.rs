@@ -26,6 +26,7 @@
 pub mod file_format;
 pub mod metadata;
 pub mod opener;
+pub mod predicate;
 pub mod reader;
 pub mod source;
 pub mod writer;

@@ -29,6 +29,7 @@ use futures::stream::BoxStream;
 use futures::StreamExt;
 use object_store::ObjectStore;
 use orc_rust::arrow_reader::ArrowReaderBuilder;
+use orc_rust::predicate::Predicate as OrcPredicate;
 use orc_rust::projection::ProjectionMask;
 use orc_rust::schema::RootDataType;
 use std::collections::HashMap;
@@ -54,6 +55,8 @@ pub struct OrcOpener {
     pub metrics: ExecutionPlanMetricsSet,
     /// ObjectStore for reading files
     pub object_store: Arc<dyn ObjectStore>,
+    /// Optional predicate for stripe-level filtering
+    pub predicate: Option<OrcPredicate>,
 }
 
 impl OrcOpener {
@@ -68,6 +71,7 @@ impl OrcOpener {
         partition_fields: Vec<arrow::datatypes::FieldRef>,
         metrics: ExecutionPlanMetricsSet,
         object_store: Arc<dyn ObjectStore>,
+        predicate: Option<OrcPredicate>,
     ) -> Self {
         Self {
             partition_index,
@@ -78,6 +82,7 @@ impl OrcOpener {
             partition_fields,
             metrics,
             object_store,
+            predicate,
         }
     }
 }
@@ -91,6 +96,7 @@ impl FileOpener for OrcOpener {
         let limit = self.limit;
         let projection = Arc::clone(&self.projection);
         let logical_file_schema = Arc::clone(&self.logical_file_schema);
+        let predicate = self.predicate.clone();
 
         let future: BoxFuture<'static, Result<BoxStream<'static, Result<RecordBatch>>>> =
             Box::pin(async move {
@@ -124,6 +130,11 @@ impl FileOpener for OrcOpener {
                 arrow_reader_builder = arrow_reader_builder
                     .with_projection(projection_mask)
                     .with_batch_size(batch_size);
+
+                // Apply predicate for stripe-level filtering if available
+                if let Some(pred) = predicate {
+                    arrow_reader_builder = arrow_reader_builder.with_predicate(pred);
+                }
 
                 // Build the async stream reader
                 let arrow_stream_reader = arrow_reader_builder.build_async();
