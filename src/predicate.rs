@@ -409,8 +409,8 @@ mod tests {
         );
 
         assert_eq!(
-            convert_scalar_to_predicate_value(&ScalarValue::Float64(Some(3.14))),
-            Some(PredicateValue::Float64(Some(3.14)))
+            convert_scalar_to_predicate_value(&ScalarValue::Float64(Some(std::f64::consts::PI))),
+            Some(PredicateValue::Float64(Some(std::f64::consts::PI)))
         );
 
         assert_eq!(

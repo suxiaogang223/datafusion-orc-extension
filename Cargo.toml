@@ -63,10 +63,20 @@ bytes = "1.11"
 log = "^0.4"
 itertools = "0.14"
 
+# Benchmark dependencies (for tpcds_bench binary)
+datafusion = { version = "51.0.0", default-features = false, features = ["sql"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+structopt = { version = "0.3", default-features = false }
+env_logger = "0.11"
+
 [dev-dependencies]
 # Test utilities
 datafusion = { version = "51.0.0", default-features = false }
 tempfile = "3.20"
+# Benchmark framework
+criterion = { version = "0.8", features = ["async_tokio", "async_futures"] }
+parking_lot = "0.12"
 
 # TODO: Remove this once we have a proper workspace setup
 [lints.rust]
@@ -75,3 +85,11 @@ unused = "warn"
 [lib]
 name = "datafusion_datasource_orc"
 path = "src/lib.rs"
+
+[[bin]]
+name = "tpcds_bench"
+path = "src/bin/tpcds_bench.rs"
+
+[[bench]]
+name = "orc_query_sql"
+harness = false

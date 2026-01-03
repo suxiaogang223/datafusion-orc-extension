@@ -314,6 +314,55 @@ cargo build
 cargo test
 ```
 
+### Benchmarks
+
+Run performance benchmarks using `cargo bench`:
+
+```bash
+# Run all benchmarks
+cargo bench
+
+# Run specific benchmark
+cargo bench --bench orc_query_sql
+
+# Run specific test function
+cargo bench --bench orc_query_sql -- full_table_scan
+
+# Use release mode for accurate results
+cargo bench --release
+```
+
+The benchmark suite tests various query patterns:
+- Full table scans
+- Column projection
+- Predicate pushdown
+- Aggregations
+- LIMIT operations
+
+See [docs/cargo_bench.md](docs/cargo_bench.md) for detailed information.
+
+### TPC-DS Benchmark
+
+This project includes a TPC-DS benchmark runner for testing ORC datasource performance:
+
+```bash
+# Run single query
+cargo run --release --bin tpcds_bench -- \
+    --path /path/to/tpcds_sf1_orc \
+    --query-path /path/to/tpc-ds/queries \
+    --query 1 \
+    --iterations 3
+
+# Run all queries
+cargo run --release --bin tpcds_bench -- \
+    --path /path/to/tpcds_sf1_orc \
+    --query-path /path/to/tpc-ds/queries \
+    --iterations 5 \
+    --output results.json
+```
+
+See [docs/tpcds_benchmark_plan.md](docs/tpcds_benchmark_plan.md) for detailed instructions.
+
 ### Code Style
 
 - Follow Rust official code style

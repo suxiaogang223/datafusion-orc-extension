@@ -628,7 +628,11 @@ async fn test_statistics_extraction() {
     let session_state = ctx.state();
 
     let schema = format
-        .infer_schema(&session_state, &object_store, &[file_meta.clone()])
+        .infer_schema(
+            &session_state,
+            &object_store,
+            std::slice::from_ref(&file_meta),
+        )
         .await
         .expect("Failed to infer schema");
 
